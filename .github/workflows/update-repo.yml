@@ -20,6 +20,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # ✅ NO sparse-checkout - download everything
+          # ✅ NO lfs - not needed for regular files
+
+      - name: 🔍 Debug: Show What Was Checked Out
+        run: |
+          echo "=== WORKSPACE ==="
+          pwd
+          echo "=== ALL FILES ==="
+          find "${{ github.workspace }}" -type f | head -20
+          echo "=== x86_64 CONTENTS ==="
+          ls -la "${{ github.workspace }}/x86_64/" || echo "x86_64 not found!"
+          echo "=== SEARCH FOR PACKAGES ==="
+          find "${{ github.workspace }}" -name "*.pkg.tar.zst" || echo "No packages found!"
 
       - name: Setup Environment
         run: |
@@ -44,11 +57,15 @@ jobs:
           rm -f *.lck *.db* *.files*
           sudo chown -R builduser:builduser .
           
+          echo "=== FILES IN x86_64 ==="
+          ls -la
+          
           if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
             sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
           else
-            echo "No packages found"
-            ls -la
+            echo "❌ No packages found in x86_64/"
+            echo "Looking in workspace root:"
+            ls -la "${{ github.workspace }}/"
             exit 1
           fi
 
