@@ -18,38 +18,38 @@ jobs:
 
       - name: Setup & Update
         run: |
-          # 1. Install base dependencies (NO aurutils yet - it's in AUR!)
+          # 1. Install base dependencies
           pacman -Sy --noconfirm git base-devel sudo
           
-          # 2. Build and install aurutils FROM AUR manually
-          # Create temp build user
+          # 2. Build and install aurutils FROM AUR
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
-          
-          # Clone aurutils from AUR and install it
           sudo -u builder git clone https://aur.archlinux.org/aurutils.git /tmp/aurutils
           sudo -u builder bash -c "cd /tmp/aurutils && makepkg -si --noconfirm"
           
-          # 3. NOW add custom repo to pacman.conf (after aurutils is installed)
+          # 3. Add custom repo to pacman.conf
           mkdir -p "${{ github.workspace }}/x86_64"
           printf "\n[tornadoos-repo]\nSigLevel = Optional TrustAll\nServer = file://%s/x86_64\n" "${{ github.workspace }}" >> /etc/pacman.conf
           
-          # 4. Setup builduser for package building
+          # 4. Setup builduser
           useradd -m builduser
           echo "builduser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builduser
           
           # 5. Configure git
           git config --global --add safe.directory "${{ github.workspace }}"
           
-          # 6. Change ownership BUT preserve .git for root
+          # 6. Change ownership BUT preserve .git
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec chown -R builduser:builduser {} \;
 
       - name: Sync AUR Packages
         run: |
           sudo -u builduser git config --global --add safe.directory "${{ github.workspace }}"
-          sudo -u builduser aur repo -a "${{ github.workspace }}/x86_64/tornadoos-repo.db.tar.gz"
-          sudo -u builduser aur sync -u -d tornadoos-repo --noview --noconfirm
-          rm -f x86_64/*.old
+          
+          # Rebuild database from existing packages
+          cd "${{ github.workspace }}/x86_64"
+          sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst 2>/dev/null || true
+          
+          rm -f *.old
 
       - name: Push Updates
         run: |
@@ -59,7 +59,6 @@ jobs:
           
           cd "${{ github.workspace }}"
           
-          # Ensure .git is accessible
           chmod -R u+rwX "${{ github.workspace }}/.git" 2>/dev/null || true
           
           git config --global --add safe.directory "${{ github.workspace }}"
