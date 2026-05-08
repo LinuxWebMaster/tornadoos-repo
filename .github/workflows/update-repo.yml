@@ -18,12 +18,25 @@ jobs:
 
       - name: Setup & Update
         run: |
-          pacman -Syu --noconfirm git base-devel sudo
+          # Install packages WITHOUT full system upgrade (faster & safer in CI)
+          pacman -Sy --noconfirm git base-devel sudo
+          
+          # Create x86_64 directory BEFORE adding to pacman.conf
+          mkdir -p "${{ github.workspace }}/x86_64"
+          
+          # Add repo to pacman.conf AFTER directory exists
           printf "\n[tornadoos-repo]\nSigLevel = Optional TrustAll\nServer = file://%s/x86_64\n" "${{ github.workspace }}" >> /etc/pacman.conf
+          
+          # Install aurutils
           pacman -Sy --noconfirm aurutils
+          
+          # Setup builduser
           useradd -m builduser
           echo "builduser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builduser
+          
+          # Configure git safe directory
           git config --global --add safe.directory "${{ github.workspace }}"
+          
           # Change ownership of files BUT preserve .git for root
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec chown -R builduser:builduser {} \;
 
@@ -36,16 +49,13 @@ jobs:
 
       - name: Push Updates
         run: |
-          # Debug info
           echo "=== Workspace: ${{ github.workspace }} ==="
           pwd
           ls -la "${{ github.workspace }}"
-          ls -la "${{ github.workspace }}/.git" || echo ".git not accessible"
           
-          # Use GitHub expression (NOT shell variable)
           cd "${{ github.workspace }}"
           
-          # Ensure .git is readable/writable
+          # Ensure .git is accessible
           chmod -R u+rwX "${{ github.workspace }}/.git" 2>/dev/null || true
           
           git config --global --add safe.directory "${{ github.workspace }}"
@@ -54,7 +64,6 @@ jobs:
           
           git add x86_64/
           if git commit -m "Automated AUR Update $(date +%Y-%m-%d)"; then
-            # Make sure your secret is named TOKEN_NAME in repo Settings → Secrets
             git push https://${{ secrets.TOKEN_NAME }}@github.com/LinuxWebMaster/tornadoos-repo.git HEAD:main
           else
             echo "✅ No changes to commit, skipping push."
