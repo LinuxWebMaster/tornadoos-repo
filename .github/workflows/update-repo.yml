@@ -4,9 +4,6 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -17,37 +14,27 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      - name: Setup Environment
+      - name: Setup & Update
         run: |
+          # 1. Install base tools
           pacman -Syu --noconfirm git base-devel sudo
+          
+          # 2. Tell pacman to use your OWN repo (which now contains aurutils)
+          echo -e "\n[tornadoos-repo]\nSigLevel = Optional TrustAll\nServer = file://$GITHUB_WORKSPACE/x86_64" >> /etc/pacman.conf
+          
+          # 3. Install aurutils DIRECTLY from your repo
+          pacman -Sy --noconfirm aurutils
+          
+          # 4. Setup builduser
           useradd -m builduser
           echo "builduser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builduser
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          
-          # Register your repo in the container's pacman.conf
-          echo -e "\n[tornadoos-repo]\nSigLevel = Optional TrustAll\nServer = file://$GITHUB_WORKSPACE/x86_64" >> /etc/pacman.conf
-          
           chown -R builduser:builduser .
-
-      - name: Install aurutils (Bootstrap)
-        run: |
-          sudo -u builduser bash -c "
-            cd /tmp && \
-            git clone https://aur.archlinux.org/aurutils.git --depth 1 && \
-            cd aurutils && \
-            makepkg -si --noconfirm
-          "
 
       - name: Sync AUR Packages
         run: |
-          # Use the clean DB name from your folder
-          DB_NAME="tornadoos-repo"
-          
-          # Ensure the DB exists and is initialized for aurutils
-          sudo -u builduser aur repo --add ./x86_64/${DB_NAME}.db.tar.gz
-          
-          # Sync updates and clean up .old files automatically
-          sudo -u builduser aur sync -u -d ${DB_NAME} --noview --noconfirm
+          sudo -u builduser aur repo --add ./x86_64/tornadoos-repo.db.tar.gz
+          sudo -u builduser aur sync -u -d tornadoos-repo --noview --noconfirm
           rm -f x86_64/*.old
 
       - name: Push Updates
@@ -55,9 +42,5 @@ jobs:
           git config --global user.name "TornadoOS Bot"
           git config --global user.email "ricki.clay@protonmail.com"
           git add x86_64/
-          if git diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "Automated AUR Update $(date +%Y-%m-%d)"
-            git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git HEAD:main
-          fi
+          git commit -m "Automated AUR Update $(date +%Y-%m-%d)" || exit 0
+          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git HEAD:main
