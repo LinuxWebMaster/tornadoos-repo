@@ -18,32 +18,27 @@ jobs:
 
       - name: Setup & Update
         run: |
-          # Install packages WITHOUT full system upgrade (faster & safer in CI)
-          pacman -Sy --noconfirm git base-devel sudo
+          # 🔑 CRITICAL FIX: Install aurutils HERE, before adding custom repo to pacman.conf
+          pacman -Sy --noconfirm git base-devel sudo aurutils
           
-          # Create x86_64 directory BEFORE adding to pacman.conf
+          # NOW create directory and add repo to pacman.conf (NO pacman -Sy after this!)
           mkdir -p "${{ github.workspace }}/x86_64"
-          
-          # Add repo to pacman.conf AFTER directory exists
           printf "\n[tornadoos-repo]\nSigLevel = Optional TrustAll\nServer = file://%s/x86_64\n" "${{ github.workspace }}" >> /etc/pacman.conf
-          
-          # Install aurutils
-          pacman -Sy --noconfirm aurutils
           
           # Setup builduser
           useradd -m builduser
           echo "builduser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builduser
           
-          # Configure git safe directory
+          # Configure git
           git config --global --add safe.directory "${{ github.workspace }}"
           
-          # Change ownership of files BUT preserve .git for root
+          # Change ownership BUT preserve .git for root
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec chown -R builduser:builduser {} \;
 
       - name: Sync AUR Packages
         run: |
           sudo -u builduser git config --global --add safe.directory "${{ github.workspace }}"
-          sudo -u builduser aur repo -a ./x86_64/tornadoos-repo.db.tar.gz
+          sudo -u builduser aur repo -a "${{ github.workspace }}/x86_64/tornadoos-repo.db.tar.gz"
           sudo -u builduser aur sync -u -d tornadoos-repo --noview --noconfirm
           rm -f x86_64/*.old
 
