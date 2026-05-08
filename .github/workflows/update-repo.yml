@@ -36,6 +36,10 @@ jobs:
       - name: Push Updates
         run: |
           cd $GITHUB_WORKSPACE
+          
+          # Change ownership back to root so git commands work
+          chown -R root:root "$GITHUB_WORKSPACE"
+          
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global user.name "TornadoOS Bot"
           git config --global user.email "ricki.clay@protonmail.com"
