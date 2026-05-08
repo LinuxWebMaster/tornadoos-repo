@@ -11,22 +11,27 @@ jobs:
       image: archlinux:latest
       options: --privileged
     steps:
+      # 🔑 FIX 1: Full checkout with LFS support (No sparse-checkout)
       - name: Checkout Repo
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: true
-          # ✅ Full checkout - no sparse checkout filtering
+          lfs: true  # Essential if packages are large files
 
-      - name: Debug After Checkout
+      # 🔑 FIX 2: Verify files IMMEDIATELY after checkout
+      - name: Debug Checkout
         run: |
-          echo "=== Files after checkout ==="
+          echo "=== WORKSPACE ==="
+          pwd
+          echo "=== ROOT FILES ==="
           ls -la
-          echo "=== x86_64 contents ==="
-          ls -la x86_64/ || echo "x86_64/ not found!"
-          echo "=== Package files ==="
-          ls -la x86_64/*.pkg.tar.zst 2>/dev/null || echo "No packages found!"
-          ls -la .git 2>&1 || echo ".git is missing!"
+          echo "=== x86_64 FILES ==="
+          ls -la x86_64/ || echo "❌ x86_64 folder missing!"
+          echo "=== SEARCHING FOR PACKAGES ==="
+          find . -name "*.pkg.tar.zst" 2>/dev/null || echo "❌ No packages found anywhere!"
+          echo "=== GIT STATUS ==="
+          git status --short
 
       - name: Setup & Update
         run: |
@@ -50,7 +55,7 @@ jobs:
           # 5. Configure git safe directory
           git config --global --add safe.directory "${{ github.workspace }}"
           
-          # 6. Change ownership - be explicit about what we change
+          # 6. Change ownership
           chown -R builduser:builduser x86_64 2>/dev/null || true
           chown -R builduser:builduser update-repo.sh 2>/dev/null || true
 
@@ -60,67 +65,56 @@ jobs:
           
           cd "${{ github.workspace }}/x86_64"
           
-          # Debug: Show what we're working with
-          echo "=== Files in x86_64 ==="
+          # Debug: Show what we have before building
+          echo "=== PRE-BUILD CHECK ==="
           ls -la
           
-          # 🔑 CRITICAL: Remove stale lock files first
+          # Remove stale lock files
           rm -f *.lck
           
-          # Clean ALL old database files
+          # Clean old database files
           rm -f tornadoos-repo.db tornadoos-repo.db.tar.gz tornadoos-repo.files tornadoos-repo.files.tar.gz
           
-          # Ensure builduser owns the directory
+          # Ensure permissions
           sudo chown -R builduser:builduser .
           
-          # Check if we have packages to add
+          # Check for packages
           if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
             echo "✅ Found packages, building database..."
-            # Rebuild database (creates .db.tar.gz format)
             sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
             
-            # Verify the database is valid
-            echo "=== Database verification ==="
+            echo "=== DATABASE VERIFICATION ==="
             file tornadoos-repo.db.tar.gz
             tar -tzf tornadoos-repo.db.tar.gz | head -3
           else
-            echo "❌ ERROR: No .pkg.tar.zst files found in x86_64/"
-            echo "Available files:"
-            ls -la
+            echo "❌ ERROR: Still no packages found!"
             exit 1
           fi
           
-          # Clean up lock files
-          rm -f *.lck
-          
-          rm -f *.old
+          rm -f *.lck *.old
 
       - name: Push Updates
         run: |
-          echo "=== Before Push ==="
-          pwd
+          echo "=== PRE-PUSH CHECK ==="
           ls -la "${{ github.workspace }}/x86_64"
           
           cd "${{ github.workspace }}"
           
-          # Re-initialize git if .git is missing
           if [ ! -d ".git" ]; then
-            echo "⚠️ .git folder missing, re-initializing..."
+            echo "⚠️ .git missing, re-initializing..."
             git init
             git remote add origin https://github.com/LinuxWebMaster/tornadoos-repo.git
             git fetch origin main
             git reset --hard origin/main
           fi
           
-          # Ensure .git is accessible
           chmod -R u+rwX .git
-          
           git config --global --add safe.directory "${{ github.workspace }}"
           git config --global user.name "TornadoOS Bot"
           git config --global user.email "ricki.clay@protonmail.com"
           
-          # 🔑 CRITICAL: Only add specific files, NOT uncompressed .db
           cd x86_64
+          # Only commit the correct database files
           git add *.pkg.tar.zst tornadoos-repo.db.tar.gz tornadoos-repo.files.tar.gz
           git rm -f tornadoos-repo.db tornadoos-repo.files *.lck 2>/dev/null || true
           cd ..
@@ -128,5 +122,5 @@ jobs:
           if git commit -m "Automated AUR Update $(date +%Y-%m-%d)"; then
             git push https://${{ secrets.TOKEN_NAME }}@github.com/LinuxWebMaster/tornadoos-repo.git HEAD:main
           else
-            echo "✅ No changes to commit, skipping push."
+            echo "✅ No changes to commit."
           fi
