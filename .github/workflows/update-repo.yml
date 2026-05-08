@@ -16,17 +16,17 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: true
-          sparse-checkout: |
-            .github
-            x86_64
-            update-repo.sh
+          # ✅ Full checkout - no sparse checkout filtering
 
       - name: Debug After Checkout
         run: |
           echo "=== Files after checkout ==="
           ls -la
+          echo "=== x86_64 contents ==="
+          ls -la x86_64/ || echo "x86_64/ not found!"
+          echo "=== Package files ==="
+          ls -la x86_64/*.pkg.tar.zst 2>/dev/null || echo "No packages found!"
           ls -la .git 2>&1 || echo ".git is missing!"
-          git status 2>&1 || echo "git status failed"
 
       - name: Setup & Update
         run: |
@@ -60,6 +60,10 @@ jobs:
           
           cd "${{ github.workspace }}/x86_64"
           
+          # Debug: Show what we're working with
+          echo "=== Files in x86_64 ==="
+          ls -la
+          
           # 🔑 CRITICAL: Remove stale lock files first
           rm -f *.lck
           
@@ -69,13 +73,22 @@ jobs:
           # Ensure builduser owns the directory
           sudo chown -R builduser:builduser .
           
-          # Rebuild database (creates .db.tar.gz format)
-          sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
-          
-          # Verify the database is valid
-          echo "=== Database verification ==="
-          file tornadoos-repo.db.tar.gz
-          tar -tzf tornadoos-repo.db.tar.gz | head -3
+          # Check if we have packages to add
+          if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
+            echo "✅ Found packages, building database..."
+            # Rebuild database (creates .db.tar.gz format)
+            sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
+            
+            # Verify the database is valid
+            echo "=== Database verification ==="
+            file tornadoos-repo.db.tar.gz
+            tar -tzf tornadoos-repo.db.tar.gz | head -3
+          else
+            echo "❌ ERROR: No .pkg.tar.zst files found in x86_64/"
+            echo "Available files:"
+            ls -la
+            exit 1
+          fi
           
           # Clean up lock files
           rm -f *.lck
