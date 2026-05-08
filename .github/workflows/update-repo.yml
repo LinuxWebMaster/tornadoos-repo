@@ -20,19 +20,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # ✅ NO sparse-checkout - download everything
-          # ✅ NO lfs - not needed for regular files
 
-      - name: 🔍 Debug: Show What Was Checked Out
+      - name: 🔍 Debug: Full Workspace Inspection
         run: |
-          echo "=== WORKSPACE ==="
-          pwd
-          echo "=== ALL FILES ==="
-          find "${{ github.workspace }}" -type f | head -20
-          echo "=== x86_64 CONTENTS ==="
-          ls -la "${{ github.workspace }}/x86_64/" || echo "x86_64 not found!"
-          echo "=== SEARCH FOR PACKAGES ==="
-          find "${{ github.workspace }}" -name "*.pkg.tar.zst" || echo "No packages found!"
+          echo "=== GITHUB_WORKSPACE: ${{ github.workspace }} ==="
+          echo "=== PWD: $(pwd) ==="
+          echo "=== ROOT LISTING ==="
+          ls -laR "${{ github.workspace }}" 2>&1 | head -50
+          echo "=== FIND .pkg.tar.zst FILES ==="
+          find "${{ github.workspace }}" -name "*.pkg.tar.zst" -exec ls -lh {} \; 2>&1 || echo "None found"
+          echo "=== CHECK x86_64 DIRECTLY ==="
+          if [ -d "${{ github.workspace }}/x86_64" ]; then
+            echo "x86_64 exists!"
+            ls -la "${{ github.workspace }}/x86_64"
+          else
+            echo "❌ x86_64 directory does not exist!"
+          fi
+        shell: bash
 
       - name: Setup Environment
         run: |
@@ -49,23 +53,29 @@ jobs:
           printf "\n[tornadoos-repo]\nSigLevel = Optional TrustAll\nServer = file://%s/x86_64\n" "${{ github.workspace }}" >> /etc/pacman.conf
           
           git config --global --add safe.directory "${{ github.workspace }}"
-          chown -R builduser:builduser x86_64 || true
+          chown -R builduser:builduser "${{ github.workspace }}/x86_64" || true
 
       - name: Build Database
         run: |
-          cd "${{ github.workspace }}/x86_64"
+          WORKSPACE="${{ github.workspace }}"
+          cd "${WORKSPACE}/x86_64"
+          
+          echo "=== CURRENT DIR: $(pwd) ==="
+          echo "=== FILES HERE ==="
+          ls -la
+          
           rm -f *.lck *.db* *.files*
           sudo chown -R builduser:builduser .
           
-          echo "=== FILES IN x86_64 ==="
-          ls -la
-          
-          if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
-            sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
+          # Use explicit file list instead of glob
+          PKGS=$(ls *.pkg.tar.zst 2>/dev/null)
+          if [ -n "$PKGS" ]; then
+            echo "✅ Found packages: $PKGS"
+            sudo -u builduser repo-add tornadoos-repo.db.tar.gz $PKGS
           else
-            echo "❌ No packages found in x86_64/"
-            echo "Looking in workspace root:"
-            ls -la "${{ github.workspace }}/"
+            echo "❌ No .pkg.tar.zst files found in $(pwd)"
+            echo "Full workspace listing:"
+            ls -laR "${WORKSPACE}" | head -30
             exit 1
           fi
 
@@ -76,7 +86,7 @@ jobs:
           git config --global user.email "ricki.clay@protonmail.com"
           
           cd x86_64
-          git add *.pkg.tar.zst *.db.tar.gz *.files.tar.gz
+          git add *.pkg.tar.zst *.db.tar.gz *.files.tar.gz 2>/dev/null || true
           git rm -f *.db *.files *.lck 2>/dev/null || true
           cd ..
           
