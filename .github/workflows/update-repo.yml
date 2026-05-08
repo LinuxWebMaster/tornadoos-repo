@@ -13,20 +13,20 @@ jobs:
       options: --privileged
     
     steps:
-      # 🔑 Install git BEFORE checkout
-      - name: Install Git
+      # Install git BEFORE checkout
+      - name: "Install Git"
         run: pacman -Sy --noconfirm git
         shell: bash
 
       # Full checkout (no sparse-checkout)
-      - name: Checkout Repo
+      - name: "Checkout Repo"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
       # Debug: Verify files
-      - name: Debug: Show Files
+      - name: "Debug: Show Files"
         run: |
           echo "=== PWD: $(pwd) ==="
           ls -la
@@ -36,7 +36,7 @@ jobs:
           find . -name "*.pkg.tar.zst" || echo "No packages found"
 
       # Setup environment
-      - name: Setup & Update
+      - name: "Setup & Update"
         run: |
           pacman -Sy --noconfirm base-devel sudo
           
@@ -56,7 +56,7 @@ jobs:
           chown -R builduser:builduser update-repo.sh 2>/dev/null || true
 
       # Build database
-      - name: Sync AUR Packages
+      - name: "Sync AUR Packages"
         run: |
           sudo -u builduser git config --global --add safe.directory "$(pwd)"
           
@@ -76,7 +76,7 @@ jobs:
           rm -f *.lck *.old
 
       # Push changes
-      - name: Push Updates
+      - name: "Push Updates"
         run: |
           git config --global user.name "TornadoOS Bot"
           git config --global user.email "ricki.clay@protonmail.com"
