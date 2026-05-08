@@ -21,7 +21,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          # 🔑 FIX 1: Set to false so it doesn't save the limited GITHUB_TOKEN
           persist-credentials: false
 
       - name: "Debug: Show Files"
@@ -52,6 +51,7 @@ jobs:
           chown -R builduser:builduser x86_64 2>/dev/null || true
           chown -R builduser:builduser update-repo.sh 2>/dev/null || true
 
+      # ✅ FIX: Properly indented under steps:
       - name: "Sync AUR Packages"
         run: |
           sudo -u builduser git config --global --add safe.directory "$(pwd)"
@@ -63,6 +63,13 @@ jobs:
           if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
             echo "✅ Found packages, building database..."
             sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
+            
+            # Create uncompressed versions for pacman compatibility with GitHub Raw
+            if [ -f tornadoos-repo.db.tar.gz ]; then
+              # Extract the .db file from the tarball
+              tar -xzf tornadoos-repo.db.tar.gz --to-stdout 2>/dev/null | head -c -0 > tornadoos-repo.db || true
+              tar -xzf tornadoos-repo.db.tar.gz --to-stdout 2>/dev/null | head -c -0 > tornadoos-repo.files || true
+            fi
           else
             echo "❌ ERROR: No packages found!"
             ls -la
@@ -71,18 +78,23 @@ jobs:
           
           rm -f *.lck *.old
 
+      # ✅ FIX: Properly indented under steps:
       - name: "Push Updates"
         run: |
           git config --global user.name "TornadoOS Bot"
           git config --global user.email "ricki.clay@protonmail.com"
           
           cd x86_64
-          git add *.pkg.tar.zst *.db.tar.gz *.files.tar.gz 2>/dev/null || true
-          git rm -f *.db *.files *.lck 2>/dev/null || true
+          
+          # Add all relevant files (both compressed and uncompressed formats)
+          git add *.pkg.tar.zst 2>/dev/null || true
+          git add tornadoos-repo.db.tar.gz tornadoos-repo.files.tar.gz 2>/dev/null || true
+          git add tornadoos-repo.db tornadoos-repo.files 2>/dev/null || true
+          
+          git rm -f *.lck 2>/dev/null || true
           cd ..
           
           if git commit -m "Automated AUR Update $(date +%Y-%m-%d)"; then
-            # 🔑 FIX 2: Use username:token format for reliable authentication
             git push https://LinuxWebMaster:${{ secrets.GH_PAT }}@github.com/LinuxWebMaster/tornadoos-repo.git HEAD:main
           else
             echo "✅ No changes to commit."
