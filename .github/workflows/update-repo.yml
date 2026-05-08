@@ -13,52 +13,32 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Ensures the .git history is fully available
 
       - name: Setup & Update
         run: |
-          # 1. Install base tools
           pacman -Syu --noconfirm git base-devel sudo
-          
-          # 2. Register your OWN repo (which contains aurutils)
           printf "\n[tornadoos-repo]\nSigLevel = Optional TrustAll\nServer = file://%s/x86_64\n" "$GITHUB_WORKSPACE" >> /etc/pacman.conf
-          
-          # 3. Install aurutils from local repo
           pacman -Sy --noconfirm aurutils
-          
-          # 4. Setup builduser
           useradd -m builduser
           echo "builduser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builduser
+          # Trust the directory for BOTH users
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           chown -R builduser:builduser .
 
       - name: Sync AUR Packages
         run: |
-          DB_NAME="tornadoos-repo"
-          
-          # Initialize/Update repo database
-          sudo -u builduser aur repo -a ./x86_64/${DB_NAME}.db.tar.gz
-          
-          # Sync updates from AUR
-          sudo -u builduser aur sync -u -d ${DB_NAME} --noview --noconfirm
-          
-          # Clean up backup files
+          sudo -u builduser git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sudo -u builduser aur repo -a ./x86_64/tornadoos-repo.db.tar.gz
+          sudo -u builduser aur sync -u -d tornadoos-repo --noview --noconfirm
           rm -f x86_64/*.old
 
-     - name: Push Updates
+      - name: Push Updates
         run: |
-          # Use the absolute path where GitHub Actions mounts your code
-          cd /__w/tornadoos-repo/tornadoos-repo
-          
-          # Force Git to recognize this specific path as a safe repository
-          git config --global --add safe.directory /__w/tornadoos-repo/tornadoos-repo
-          
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global user.name "TornadoOS Bot"
           git config --global user.email "ricki.clay@protonmail.com"
-          
           git add x86_64/
-          
-          # Only commit if changes exist
           git commit -m "Automated AUR Update $(date +%Y-%m-%d)" || exit 0
-          
-          # Push using your secret token
           git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git HEAD:main
