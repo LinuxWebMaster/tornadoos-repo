@@ -35,9 +35,12 @@ jobs:
 
       - name: Push Updates
         run: |
+          cd $GITHUB_WORKSPACE
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global user.name "TornadoOS Bot"
           git config --global user.email "ricki.clay@protonmail.com"
+          
           git add x86_64/
           git commit -m "Automated AUR Update $(date +%Y-%m-%d)" || exit 0
-          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git HEAD:main
+          
+          git push https://${{ secrets.TOKEN_NAME }}@github.com/LinuxWebMaster/tornadoos-repo.git HEAD:main
