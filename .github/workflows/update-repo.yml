@@ -13,19 +13,17 @@ jobs:
       options: --privileged
     
     steps:
-      # Install git BEFORE checkout
       - name: "Install Git"
         run: pacman -Sy --noconfirm git
         shell: bash
 
-      # Full checkout (no sparse-checkout)
       - name: "Checkout Repo"
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
+          # 🔑 FIX 1: Set to false so it doesn't save the limited GITHUB_TOKEN
+          persist-credentials: false
 
-      # Debug: Verify files
       - name: "Debug: Show Files"
         run: |
           echo "=== PWD: $(pwd) ==="
@@ -35,7 +33,6 @@ jobs:
           echo "=== FIND PACKAGES ==="
           find . -name "*.pkg.tar.zst" || echo "No packages found"
 
-      # Setup environment
       - name: "Setup & Update"
         run: |
           pacman -Sy --noconfirm base-devel sudo
@@ -55,7 +52,6 @@ jobs:
           chown -R builduser:builduser x86_64 2>/dev/null || true
           chown -R builduser:builduser update-repo.sh 2>/dev/null || true
 
-      # Build database
       - name: "Sync AUR Packages"
         run: |
           sudo -u builduser git config --global --add safe.directory "$(pwd)"
@@ -86,8 +82,8 @@ jobs:
           cd ..
           
           if git commit -m "Automated AUR Update $(date +%Y-%m-%d)"; then
-            # Use your new GH_PAT secret here
-            git push https://${{ secrets.GH_PAT }}@github.com/LinuxWebMaster/tornadoos-repo.git HEAD:main
+            # 🔑 FIX 2: Use username:token format for reliable authentication
+            git push https://LinuxWebMaster:${{ secrets.GH_PAT }}@github.com/LinuxWebMaster/tornadoos-repo.git HEAD:main
           else
             echo "✅ No changes to commit."
           fi
