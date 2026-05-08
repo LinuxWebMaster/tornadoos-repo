@@ -60,8 +60,14 @@ jobs:
           
           cd "${{ github.workspace }}/x86_64"
           
-          # 🔑 Clean ALL old database files first
+          # 🔑 CRITICAL: Remove stale lock files first
+          rm -f *.lck
+          
+          # Clean ALL old database files
           rm -f tornadoos-repo.db tornadoos-repo.db.tar.gz tornadoos-repo.files tornadoos-repo.files.tar.gz
+          
+          # Ensure builduser owns the directory
+          sudo chown -R builduser:builduser .
           
           # Rebuild database (creates .db.tar.gz format)
           sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
@@ -70,6 +76,9 @@ jobs:
           echo "=== Database verification ==="
           file tornadoos-repo.db.tar.gz
           tar -tzf tornadoos-repo.db.tar.gz | head -3
+          
+          # Clean up lock files
+          rm -f *.lck
           
           rm -f *.old
 
@@ -100,7 +109,7 @@ jobs:
           # 🔑 CRITICAL: Only add specific files, NOT uncompressed .db
           cd x86_64
           git add *.pkg.tar.zst tornadoos-repo.db.tar.gz tornadoos-repo.files.tar.gz
-          git rm -f tornadoos-repo.db tornadoos-repo.files 2>/dev/null || true
+          git rm -f tornadoos-repo.db tornadoos-repo.files *.lck 2>/dev/null || true
           cd ..
           
           if git commit -m "Automated AUR Update $(date +%Y-%m-%d)"; then
