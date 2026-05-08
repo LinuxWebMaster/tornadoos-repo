@@ -11,43 +11,55 @@ jobs:
       image: archlinux:latest
       options: --privileged
     steps:
-      # 🔑 STEP 1: Install git FIRST (before checkout)
+      # 🔑 STEP 1: Install git FIRST
       - name: Install Git in Container
         run: |
           pacman -Sy --noconfirm git
         shell: bash
 
-      # ✅ STEP 2: Now checkout works (git is installed)
+      # ✅ STEP 2: Checkout with debug info
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
+          # Force checkout of all files
+          sparse-checkout: |
+            .
+            x86_64/*
+          sparse-checkout-cone-mode: false
 
-      # 🔑 STEP 3: Install remaining dependencies
+      # 🔍 STEP 3: DEBUG - Show what was checked out
+      - name: 🔍 DEBUG: Show Workspace Contents
+        run: |
+          echo "=== WORKSPACE ROOT ==="
+          pwd
+          echo "=== ALL FILES (recursive) ==="
+          find "${{ github.workspace }}" -type f -name "*.pkg.tar.zst" 2>/dev/null || echo "❌ No .pkg.tar.zst files found!"
+          echo "=== x86_64 DIRECTORY ==="
+          ls -la "${{ github.workspace }}/x86_64/" 2>/dev/null || echo "❌ x86_64 directory not found!"
+          echo "=== GIT STATUS ==="
+          git status --short 2>/dev/null || echo "Git status failed"
+        shell: bash
+
+      # 🔑 STEP 4: Setup Arch Environment
       - name: Setup Arch Environment
         run: |
-          # Install base-devel and sudo
           pacman -Sy --noconfirm base-devel sudo
           
-          # Build and install aurutils
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
           sudo -u builder git clone https://aur.archlinux.org/aurutils.git /tmp/aurutils
           sudo -u builder bash -c "cd /tmp/aurutils && makepkg -si --noconfirm"
           
-          # Add custom repo to pacman.conf
           mkdir -p "${{ github.workspace }}/x86_64"
           printf "\n[tornadoos-repo]\nSigLevel = Optional TrustAll\nServer = file://%s/x86_64\n" "${{ github.workspace }}" >> /etc/pacman.conf
           
-          # Setup builduser
           useradd -m builduser
           echo "builduser ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builduser
           
-          # Configure git
           git config --global --add safe.directory "${{ github.workspace }}"
           
-          # Change ownership
           chown -R builduser:builduser x86_64 2>/dev/null || true
           chown -R builduser:builduser update-repo.sh 2>/dev/null || true
 
@@ -57,13 +69,14 @@ jobs:
           
           cd "${{ github.workspace }}/x86_64"
           
-          # Clean old files
+          # Show what we have
+          echo "=== FILES IN x86_64 ==="
+          ls -la
+          
           rm -f *.lck tornadoos-repo.db* tornadoos-repo.files*
           
-          # Ensure permissions
           sudo chown -R builduser:builduser .
           
-          # Check for packages
           if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
             echo "✅ Found packages, building database..."
             sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
@@ -73,7 +86,8 @@ jobs:
             tar -tzf tornadoos-repo.db.tar.gz | head -3
           else
             echo "❌ ERROR: No packages found!"
-            ls -la
+            echo "Looking for *.pkg.tar.zst in: $(pwd)"
+            find "${{ github.workspace }}" -name "*.pkg.tar.zst" 2>/dev/null
             exit 1
           fi
           
