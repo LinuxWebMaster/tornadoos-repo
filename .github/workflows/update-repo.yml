@@ -1,106 +1,53 @@
----
-name: TornadoOS Repo Auto-Update
+name: Sync AUR Packages
 
 on:
   schedule:
     - cron: '0 0 * * *'
-  workflow_dispatch: true
+  workflow_dispatch:
 
 jobs:
-  update:
+  build:
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
       options: --privileged
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
+    
     steps:
-      - name: "Install Git"
+      - name: Install Git
         run: pacman -Sy --noconfirm git
-        shell: bash
 
-      - name: "Checkout Repo"
-        uses: actions/checkout@v5
+      - name: Checkout Repo
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
+          # We need credentials to push back to GitHub so Cloudflare can see the changes
+          persist-credentials: true 
 
-      - name: "Debug: Show Files"
-        run: |
-          echo "=== PWD: $(pwd) ==="
-          ls -la
-          echo "=== x86_64 CONTENTS ==="
-          ls -la x86_64/ 2>/dev/null || echo "x86_64 not found"
-          echo "=== FIND PACKAGES ==="
-          find . -name "*.pkg.tar.zst" || echo "No packages found"
-
-      - name: "Setup & Update"
+      - name: Sync Packages
         run: |
           pacman -Sy --noconfirm base-devel sudo
-
+          
+          # Setup aurutils
           useradd -m builder
-          echo "builder ALL=(ALL) NOPASSWD: ALL" > \
-            /etc/sudoers.d/builder
-          sudo -u builder git clone \
-            https://aur.archlinux.org/aurutils.git /tmp/aurutils
-          sudo -u builder bash -c \
-            "cd /tmp/aurutils && makepkg -si --noconfirm"
-
-          mkdir -p x86_64
-          printf "\n[tornadoos-repo]\n" >> /etc/pacman.conf
-          printf "SigLevel = Optional TrustAll\n" >> /etc/pacman.conf
-          printf "Server = file://$(pwd)/x86_64\n" >> /etc/pacman.conf
-
-          useradd -m builduser
-          echo "builduser ALL=(ALL) NOPASSWD: ALL" > \
-            /etc/sudoers.d/builduser
-
-          git config --global --add safe.directory "$(pwd)"
-          chown -R builduser:builduser x86_64 2>/dev/null || true
-          chown -R builduser:builduser update-repo.sh 2>/dev/null || true
-
-      - name: "Sync AUR Packages"
-        run: |
-          sudo -u builduser git config --global \
-            --add safe.directory "$(pwd)"
-
+          echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
+          sudo -u builder git clone https://aur.archlinux.org/aurutils.git /tmp/aurutils
+          sudo -u builder bash -c "cd /tmp/aurutils && makepkg -si --noconfirm"
+          
+          # Sync packages into x86_64/
           cd x86_64
-          rm -f *.lck *.db* *.files*
-          sudo chown -R builduser:builduser .
+          sudo -u builder aur sync --chroot --database tornadoos-repo --root .
 
-          if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
-            echo "Found packages, building database..."
-            sudo -u builduser repo-add \
-              tornadoos-repo.db.tar.gz *.pkg.tar.zst
-          else
-            echo "ERROR: No packages found!"
-            ls -la
-            exit 1
-          fi
-
-          rm -f *.lck *.old
-
-      - name: "Push Updates"
+      - name: Commit and Push
         run: |
           git config --global user.name "TornadoOS Bot"
           git config --global user.email "ricki.clay@protonmail.com"
-
-          cd x86_64
-
-          git add *.pkg.tar.zst 2>/dev/null || true
-          git add tornadoos-repo.db.tar.gz \
-            tornadoos-repo.files.tar.gz 2>/dev/null || true
-          git rm -f tornadoos-repo.db tornadoos-repo.files \
-            *.lck 2>/dev/null || true
-
-          cd ..
-
-          REPO_URL="https://LinuxWebMaster:${{ secrets.GH_PAT }}"
-          REPO_URL="${REPO_URL}@github.com/LinuxWebMaster/tornadoos-repo.git"
-
-          if git commit -m "Automated AUR Update $(date +%Y-%m-%d)"; then
-            git push "$REPO_URL" HEAD:main
+          
+          # Add the new packages and databases
+          git add x86_64/
+          
+          if git commit -m "Auto-sync $(date +%Y-%m-%d)"; then
+            # Push changes. Cloudflare will see this commit and auto-deploy!
+            git push https://LinuxWebMaster:${{ secrets.GH_PAT }}@github.com/LinuxWebMaster/tornadoos-repo.git HEAD:main
           else
-            echo "No changes to commit."
+            echo "No changes."
           fi
