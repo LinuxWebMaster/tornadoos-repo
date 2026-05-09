@@ -54,6 +54,7 @@ jobs:
           chown -R builduser:builduser x86_64 2>/dev/null || true
           chown -R builduser:builduser update-repo.sh 2>/dev/null || true
 
+      # ✅ FIX: Properly indented under steps: (6 spaces before -)
       - name: "Sync AUR Packages"
         run: |
           sudo -u builduser git config --global --add safe.directory "$(pwd)"
@@ -64,12 +65,7 @@ jobs:
           
           if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
             echo "✅ Found packages, building database..."
-            # Build compressed database (repo-add also creates uncompressed .db locally)
             sudo -u builduser repo-add tornadoos-repo.db.tar.gz *.pkg.tar.zst
-            
-            # Verify both formats exist for pacman compatibility
-            echo "=== Database files created ==="
-            ls -la tornadoos-repo.db* tornadoos-repo.files* 2>/dev/null || true
           else
             echo "❌ ERROR: No packages found!"
             ls -la
@@ -78,6 +74,7 @@ jobs:
           
           rm -f *.lck *.old
 
+      # ✅ FIX: Properly indented under steps: (6 spaces before -)
       - name: "Push Updates"
         run: |
           git config --global user.name "TornadoOS Bot"
@@ -88,16 +85,15 @@ jobs:
           # Add package files
           git add *.pkg.tar.zst 2>/dev/null || true
           
-          # Add BOTH compressed and uncompressed database files for pacman compatibility
+          # ✅ ONLY add compressed database files
           git add tornadoos-repo.db.tar.gz tornadoos-repo.files.tar.gz 2>/dev/null || true
-          git add tornadoos-repo.db tornadoos-repo.files 2>/dev/null || true
           
-          # Clean up lock files
-          git rm -f *.lck 2>/dev/null || true
+          # ❌ Explicitly remove uncompressed files from git
+          git rm -f tornadoos-repo.db tornadoos-repo.files *.lck 2>/dev/null || true
+          
           cd ..
           
           if git commit -m "Automated AUR Update $(date +%Y-%m-%d)"; then
-            # Use your GH_PAT secret for authentication
             git push https://LinuxWebMaster:${{ secrets.GH_PAT }}@github.com/LinuxWebMaster/tornadoos-repo.git HEAD:main
           else
             echo "✅ No changes to commit."
